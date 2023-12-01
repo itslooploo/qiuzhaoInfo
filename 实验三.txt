@@ -211,5 +211,8 @@ CREATE TRIGGER ReturnBook
     AFTER UPDATE ON BorrowingInformation
     FOR EACH ROW
 BEGIN
-    
+    UPDATE LibraryInformation SET BorrowableNumber = BorrowableNumber + 1 WHERE ISBN=NEW.ISBN;
+    UPDATE LibraryInformation SET Borrowable = 'Y' WHERE ISBN=NEW.ISBN;
+    UPDATE ReaderInformation SET ReaderBorrowedNumber = ReaderBorrowableNumber - 1 WHERE ISBN=NEW.ISBN;
+    UPDATE ReaderInformation SET ReaderBorrowableNumber = ReaderBorrowableNumber + 1 WHERE ISBN=NEW.ISBN;
 END;
