@@ -1,0 +1,215 @@
+CREATE PROCEDURE `AllSelectInLogin`()
+BEGIN
+    select * from Login;
+END
+
+CALL AllSelectInLogin();
+
+CREATE PROCEDURE `AllSelectInLibraryInformation`(ISBN varchar(25))
+BEGIN
+    select * from LibraryInformation where LibraryInformation.ISBN = ISBN;
+END
+
+Call AllSelectInLibraryInformation(14556);
+
+select * from information_schema.ROUTINES;
+
+show procedure status;
+
+show create procedure AllSelectInLibraryInformation;
+
+drop procedure  AllSelectInLibraryInformation;
+
+
+CREATE PROCEDURE `SelectLibraryInformation`()
+BEGIN
+    select * from LibraryInformation ;
+END;
+
+
+call SelectLibraryInformation();
+
+CREATE PROCEDURE `AddToLibraryInformation`(
+    ISBN varchar(25),
+    LN varchar(25),
+    PH varchar(25),
+    Author varchar(25),
+    CN double,
+    BN double,
+    Ba char
+)begin
+    insert into LibraryInformation value(ISBN,LN,PH,Author,CN, BN,Ba);
+end;
+
+CALL AddToLibraryInformation(14556,'Yshen', 'Society', 'Kate', 8, 6, 'N');
+
+CREATE PROCEDURE `ReviseLibraryInformation`(
+    OrISBN varchar(25),
+    RevisedISBN VARCHAR(25),
+    IN LN varchar(25),
+    IN PH varchar(25),
+    IN Au varchar(25),
+    IN CN double,
+    IN BN double,
+    IN Ba char
+)begin
+    if OrISBN IS NOT NULL && OrISBN IN (SELECT ISBN FROM LibraryInformation) THEN
+        IF LN is not null then
+            update LibraryInformation set LibraryName=LN WHERE LibraryInformation.ISBN=OrISBN;
+        ELSEIF PH IS NOT NULL THEN
+            update LibraryInformation set PublishingHouse=PH WHERE LibraryInformation.ISBN=OrISBN;
+        ELSEIF Au is not null then
+            update LibraryInformation set LibraryInformation.Author=Au WHERE LibraryInformation.ISBN=OrISBN;
+        ELSEIF CN IS NOT NULL THEN
+            update LibraryInformation set CollectionNumber=CN WHERE LibraryInformation.ISBN=OrISBN;
+        ELSEIF BN IS NOT NULL THEN
+            update LibraryInformation set BorrowableNumber=BN WHERE LibraryInformation.ISBN=OrISBN;
+        ELSEIF Ba IS NOT NULL THEN
+            update LibraryInformation SET Borrowable=Ba WHERE LibraryInformation.ISBN=OrISBN;
+        ELSEIF RevisedISBN IS NOT NULL THEN
+            update LibraryInformation set ISBN=@RevisedISBN WHERE LibraryInformation.ISBN=OrISBN;
+        end if;
+    end if;
+end;
+
+SELECT @ISBN;
+SELECT @RevisedISBN;
+
+CREATE PROCEDURE `DeleteLibraryInformation`(ISBN varchar(25))
+begin
+     delete from LibraryInformation where LibraryInformation.ISBN=ISBN;
+end;
+
+call DeleteLibraryInformation(1234);
+
+
+CREATE PROCEDURE `ReturnOverdueBook`(ISBN varchar(25))
+    begin
+        select r.ReaderName, r.LibraryCardNumber
+        from ReaderInformation as r
+        join BorrowingInformation as b
+        on r.LibraryCardNumber=b.LibraryCardNumber
+        where b.ISBN = ISBN and b.ReturnDate > now();
+    end;
+
+call ReturnOverdueBook(14555);
+
+show global variables like 'I%';
+
+drop procedure sum_;
+create procedure sum_(in num int)
+    begin
+        declare total int default 0;
+        sum:loop
+            if num <= 0 then
+                leave sum;
+            end if;
+
+            set total := total + num;
+            set num := num - 1;
+        end loop sum;
+        select total;
+    end;
+
+call sum_(10);
+
+
+set @RCardNum := 124789;
+CREATE PROCEDURE getReaderInfo(in CardNum varchar(25))
+    begin
+        select * from ReaderInformation where LibraryCardNumber=CardNum;
+    end;
+
+call getReaderInfo(@RCardNum);
+
+CREATE PROCEDURE getReaderBorrowingBook(in CardNum varchar(25))
+    begin
+        select b.ISBN, l.LibraryName
+        from BorrowingInformation as b
+        join LibraryInformation as l
+        on b.ISBN=l.ISBN
+        where b.LibraryCardNumber=CardNum;
+    end;
+
+call getReaderBorrowingBook(@RCardNum);
+
+CREATE VIEW getOverdueBook
+    AS
+    SELECT l.ISBN, l.LibraryName, r.ReaderName
+    FROM BorrowingInformation AS b
+    inner join ReaderInformation as r on r.LibraryCardNumber=b.LibraryCardNumber
+    inner join LibraryInformation as l on l.ISBN=b.ISBN
+    where b.ReturnDate > now()
+    with check option;
+
+CREATE TRIGGER DeleteReader
+    BEFORE DELETE ON ReaderInformation
+    REFERENCING OLD AS R
+    FOR EACH ROW
+    BEGIN
+        IF R.LibraryCardNumber IN (SELECT DISTINCT LibraryCardNumber FROM BorrowingInformation)
+            THEN
+    end;
+
+CREATE FUNCTION check_borrowed_books(reader_id INT)
+    RETURNS INT
+BEGIN
+    DECLARE borrowed_count INT;
+    SELECT COUNT(*) INTO borrowed_count FROM BorrowingInformation WHERE BorrowingInformation.ISBN = reader_id;
+    RETURN borrowed_count;
+END;
+CREATE TRIGGER delete_reader_trigger
+    BEFORE DELETE ON ReaderInformation
+    FOR EACH ROW
+BEGIN
+    IF check_borrowed_books(OLD.LibraryCardNumber) = 0 THEN
+        DELETE FROM ReaderInformation WHERE LibraryCardNumber = OLD.LibraryCardNumber;
+    ELSE
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = '有借阅书的读者不得从读者信息表中删除';
+    END IF;
+END;
+
+
+CREATE INDEX indexBook on LibraryInformation(ISBN);
+
+
+CREATE FUNCTION CheckBorrow(CardNum INT)
+    RETURNS INT
+BEGIN
+    DECLARE BorrowNum INT;
+    SELECT COUNT(*) INTO BorrowNum FROM BorrowingInformation WHERE LibraryCardNumber=CardNum;
+    RETURN BorrowNum;
+END;
+CREATE TRIGGER DeleteReaderTrigger
+    BEFORE DELETE ON ReaderInformation
+    FOR EACH ROW
+BEGIN
+    IF CheckBorrow(OLD.LibraryCardNumber) = 0 THEN
+        DELETE FROM ReaderInformation WHERE LibraryCardNumber=OLD.LibraryCardNumber;
+    ELSE
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = '不能删除有借阅记录的读者';
+    END IF;
+END;
+
+
+CREATE TRIGGER Borrow
+    AFTER INSERT ON BorrowingInformation
+    FOR EACH ROW
+BEGIN
+    -- 图书馆可借数-1,z状态变为不可借
+    UPDATE LibraryInformation SET BorrowableNumber = BorrowableNumber - 1 WHERE ISBN=NEW.ISBN;
+    UPDATE LibraryInformation SET Borrowable = 'N' WHERE ISBN=NEW.ISBN;
+    -- 读者借阅数 +1,可借数-1
+    UPDATE ReaderInformation SET ReaderBorrowedNumber = ReaderBorrowableNumber + 1 WHERE ISBN=NEW.ISBN;
+    UPDATE ReaderInformation SET ReaderBorrowableNumber = ReaderBorrowableNumber - 1 WHERE ISBN=NEW.ISBN;
+END;
+-- 还书处理：为借阅信息表设计UPDATE触发器，在该表的归还日期列被更改后，将图书信息表的是否可借列的值变为“可借”，
+-- 读者信息表中已借数量减1及ISBN类别信息表中可借数量加1。
+CREATE TRIGGER ReturnBook
+    AFTER UPDATE ON BorrowingInformation
+    FOR EACH ROW
+BEGIN
+    
+END;
